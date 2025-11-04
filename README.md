@@ -1,36 +1,40 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Donkey - Turn Boring Images Into Professional Ones
 
-## Getting Started
+## Problem
 
-First, run the development server:
+Your screenshots look like crap. Your product images are boring. You need Photoshop or Figma just to add a decent background, and even then it takes forever. You don't have time for that, and you definitely don't want to pay $50/month for software you'll use once a week.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## Solution
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Upload your image. Pick a background. Crop it. Download it. Done. Takes 30 seconds. Free. No account. No subscription. Works in your browser.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Example Images
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+![Example](public/hero/example-image.jpg)
 
-## Learn More
+## How to Use
 
-To learn more about Next.js, take a look at the following resources:
+1. Visit the application and click "Go to playground"
+2. Upload your image by clicking the upload area or drag and drop
+3. Choose a background from the pre-loaded options or upload your own
+4. Use the editing tools to customize your image:
+   - Crop: Select aspect ratio presets or freeform crop
+   - Scale: Adjust image dimensions precisely
+   - Border Radius: Add rounded corners
+5. Select your desired canvas size (Instagram, Twitter, LinkedIn, or custom)
+6. Download your professional image in PNG or JPEG format at 1x, 2x, or 3x resolution
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Support
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+If you find this project helpful, please consider starring it on GitHub.
 
-## Deploy on Vercel
+## Author
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Built by Sandesh Shrestha
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Twitter: [@yoursandeshdev](https://x.com/yoursandeshdev)
+- LinkedIn: [sandeshshresthadev](https://www.linkedin.com/in/sandeshshresthadev/)
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
