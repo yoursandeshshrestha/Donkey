@@ -44,6 +44,7 @@ export function InlineCrop({
   const [isResizing, setIsResizing] = useState<string | null>(null);
   const [internalSelectedPreset, setInternalSelectedPreset] = useState(0);
   const selectedPreset = externalSelectedPreset ?? internalSelectedPreset;
+  const onPresetChange = externalOnPresetChange || setInternalSelectedPreset;
   const [cropArea, setCropArea] = useState({
     x: 100,
     y: 100,
@@ -52,8 +53,10 @@ export function InlineCrop({
   });
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [imagePosition, setImagePosition] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   useEffect(() => {
+    setImageLoaded(false);
     const img = new Image();
     img.onload = () => {
       imageRef.current = img;
@@ -92,7 +95,15 @@ export function InlineCrop({
         width: initialWidth,
         height: initialHeight,
       });
+      
+      setImageLoaded(true);
     };
+    
+    img.onerror = (error) => {
+      console.error("Failed to load image in crop mode:", error);
+      setImageLoaded(false);
+    };
+    
     img.src = imageData;
   }, [imageData, containerWidth, containerHeight]);
 
@@ -409,15 +420,6 @@ export function InlineCrop({
     });
   }, [selectedPreset]);
 
-  const handlePresetChange = (presetIndex: number) => {
-    if (externalOnPresetChange) {
-      externalOnPresetChange(presetIndex);
-    } else {
-      setInternalSelectedPreset(presetIndex);
-    }
-    // The useEffect above will handle updating the crop area
-  };
-
   const handleSize = 10;
   const cornerHandleSize = 16;
 
@@ -431,8 +433,17 @@ export function InlineCrop({
       onMouseLeave={handleMouseUp}
       style={{ width: containerWidth, height: containerHeight }}
     >
+      {/* Loading indicator */}
+      {!imageLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <div className="px-4 py-2 bg-white/90 backdrop-blur rounded-lg text-sm text-gray-700">
+            Loading image...
+          </div>
+        </div>
+      )}
+      
       {/* Display the original image */}
-      {imagePosition.width > 0 && (
+      {imageLoaded && imagePosition.width > 0 && (
         <img
           src={imageData}
           alt="Original"
@@ -448,6 +459,7 @@ export function InlineCrop({
       )}
 
       {/* Minimal overlay */}
+      {imageLoaded && (
       <svg className="absolute inset-0 pointer-events-none" width={containerWidth} height={containerHeight}>
         <defs>
           <mask id="cropMask">
@@ -468,8 +480,10 @@ export function InlineCrop({
           mask="url(#cropMask)"
         />
       </svg>
+      )}
 
       {/* Minimal crop box border */}
+      {imageLoaded && (
       <div
         className="absolute border border-white pointer-events-none"
         style={{
@@ -515,9 +529,10 @@ export function InlineCrop({
           />
         </svg>
       </div>
+      )}
 
       {/* Minimal corner handles */}
-      {[
+      {imageLoaded && [
         { x: cropArea.x, y: cropArea.y, pos: "tl" },
         { x: cropArea.x + cropArea.width, y: cropArea.y, pos: "tr" },
         { x: cropArea.x, y: cropArea.y + cropArea.height, pos: "bl" },
@@ -556,7 +571,7 @@ export function InlineCrop({
       ))}
 
       {/* Minimal edge handles */}
-      {[
+      {imageLoaded && [
         { x: cropArea.x + cropArea.width / 2, y: cropArea.y },
         { x: cropArea.x + cropArea.width / 2, y: cropArea.y + cropArea.height },
         { x: cropArea.x, y: cropArea.y + cropArea.height / 2 },
@@ -573,16 +588,6 @@ export function InlineCrop({
           }}
         />
       ))}
-
-      {/* Keyboard hints */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-4 z-10">
-        <div className="px-4 py-2 bg-white/90 backdrop-blur rounded-lg text-sm text-gray-700">
-          Press <kbd className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">Enter</kbd> to apply
-        </div>
-        <div className="px-4 py-2 bg-white/90 backdrop-blur rounded-lg text-sm text-gray-700">
-          Press <kbd className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">Esc</kbd> to cancel
-        </div>
-      </div>
 
     </div>
   );
