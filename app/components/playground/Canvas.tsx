@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { GradientData } from "../../playground/utils/gradientGenerator";
 import {
   getCachedImage,
   preloadImage,
 } from "../../playground/hooks/useImagePreloader";
+import { BlurBlock } from "../../playground/types";
 
 interface CanvasProps {
   width: number;
@@ -25,6 +26,7 @@ interface CanvasProps {
     cropWidth: number;
     cropHeight: number;
   };
+  blurBlocks?: BlurBlock[];
 }
 
 interface CanvasClickProps extends CanvasProps {
@@ -42,41 +44,50 @@ export function Canvas({
   imageTransform,
   onImageClick,
   onBackgroundClick,
+  blurBlocks = [],
 }: CanvasClickProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const blurCanvasRef = useRef<HTMLCanvasElement>(null);
+  const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const backgroundImageRef = useRef<HTMLImageElement | null>(null);
   const uploadedImageRef = useRef<HTMLImageElement | null>(null);
+  const blurUpdateTimeoutRef = useRef<number | null>(null);
+  const [baseCanvasReady, setBaseCanvasReady] = useState<number>(0); // Counter to trigger composite re-render
 
+  // Memoize base canvas dependency key
+  const baseCanvasKey = useMemo(() => 
+    `${width}-${height}-${backgroundSrc}-${JSON.stringify(backgroundGradient)}-${backgroundBlur}-${uploadedImageSrc}-${JSON.stringify(imageTransform)}`,
+    [width, height, backgroundSrc, backgroundGradient, backgroundBlur, uploadedImageSrc, imageTransform]
+  );
+
+  // Draw base canvas (background + image) - cached
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    let mounted = true;
+    
+    const drawBaseCanvas = () => {
+      if (!mounted) return;
+      
+      // Create or reuse base canvas
+      if (!baseCanvasRef.current) {
+        baseCanvasRef.current = document.createElement("canvas");
+      }
+      
+      const baseCanvas = baseCanvasRef.current;
+      const dpr = window.devicePixelRatio || 1;
 
-    // Get device pixel ratio for high-DPI displays
-    const dpr = window.devicePixelRatio || 1;
+      baseCanvas.width = width * dpr;
+      baseCanvas.height = height * dpr;
 
-    // Set canvas size in actual pixels
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
+      const ctx = baseCanvas.getContext("2d", {
+        alpha: true,
+        desynchronized: false,
+        willReadFrequently: false,
+      });
+      if (!ctx) return;
 
-    // Scale canvas back down via CSS
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-
-    const ctx = canvas.getContext("2d", {
-      alpha: true,
-      desynchronized: false,
-      willReadFrequently: false,
-    });
-    if (!ctx) return;
-
-    // Scale context to account for pixel ratio
-    ctx.scale(dpr, dpr);
-
-    // Set high-quality rendering
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-
-    const drawCanvas = () => {
+      ctx.scale(dpr, dpr);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       // Clear canvas
       ctx.clearRect(0, 0, width, height);
 
@@ -210,64 +221,171 @@ export function Canvas({
       }
     };
 
-    // Load background image
-    if (backgroundSrc && !backgroundGradient) {
-      // Try to get cached image first
-      const cachedBg = getCachedImage(backgroundSrc);
-      if (cachedBg) {
-        backgroundImageRef.current = cachedBg;
-        drawCanvas();
+    const loadAllImages = async () => {
+      const promises: Promise<void>[] = [];
+      
+      // Load background image
+      if (backgroundSrc && !backgroundGradient) {
+        const cachedBg = getCachedImage(backgroundSrc);
+        if (cachedBg && cachedBg.complete) {
+          backgroundImageRef.current = cachedBg;
+        } else {
+          const bgPromise = preloadImage(backgroundSrc)
+            .then((img) => {
+              if (mounted) {
+                backgroundImageRef.current = img;
+              }
+            })
+            .catch((err) => {
+              console.error("Failed to load background:", err);
+              if (mounted) {
+                backgroundImageRef.current = null;
+              }
+            });
+          promises.push(bgPromise);
+        }
       } else {
-        // Fallback to loading if not cached
-        preloadImage(backgroundSrc)
-          .then((img) => {
-            backgroundImageRef.current = img;
-            drawCanvas();
-          })
-          .catch((err) => {
-            console.error("Failed to load background:", err);
-            backgroundImageRef.current = null;
-            drawCanvas();
-          });
+        backgroundImageRef.current = null;
       }
-    } else {
-      backgroundImageRef.current = null;
-      drawCanvas();
+
+      // Load uploaded image
+      if (uploadedImageSrc) {
+        const cachedUpload = getCachedImage(uploadedImageSrc);
+        if (cachedUpload && cachedUpload.complete) {
+          uploadedImageRef.current = cachedUpload;
+        } else {
+          const uploadPromise = preloadImage(uploadedImageSrc)
+            .then((img) => {
+              if (mounted) {
+                uploadedImageRef.current = img;
+              }
+            })
+            .catch((err) => {
+              console.error("Failed to load uploaded image:", err);
+              if (mounted) {
+                uploadedImageRef.current = null;
+              }
+            });
+          promises.push(uploadPromise);
+        }
+      } else {
+        uploadedImageRef.current = null;
+      }
+
+      // Wait for all images to load before drawing
+      await Promise.all(promises);
+      
+      if (mounted) {
+        drawBaseCanvas();
+        // Trigger composite canvas update by incrementing counter
+        setBaseCanvasReady(prev => prev + 1);
+      }
+    };
+
+    loadAllImages();
+
+    return () => {
+      mounted = false;
+    };
+  }, [baseCanvasKey]);
+
+  // Composite base canvas with blur blocks - fast updates
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !baseCanvasRef.current) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+
+    const ctx = canvas.getContext("2d", {
+      alpha: false, // Disable alpha to get opaque white background
+      desynchronized: true,
+      willReadFrequently: false,
+    });
+    if (!ctx) return;
+
+    ctx.scale(dpr, dpr);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    const compositeCanvas = () => {
+      // Fill with white first (since alpha is false, this ensures white background)
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      
+      // Draw base canvas on top
+      ctx.drawImage(baseCanvasRef.current!, 0, 0, width, height);
+
+      // Draw blur blocks on top
+      if (blurBlocks.length > 0) {
+        blurBlocks.forEach((block) => {
+          ctx.save();
+
+          const blockX = (width * block.x) / 100;
+          const blockY = (height * block.y) / 100;
+          const blockWidth = (width * block.width) / 100;
+          const blockHeight = (height * block.height) / 100;
+
+          // Clip to block bounds
+          ctx.beginPath();
+          ctx.rect(blockX, blockY, blockWidth, blockHeight);
+          ctx.clip();
+
+          // Create temp canvas for blur
+          const padding = block.blurAmount * 2;
+          const tempCanvas = document.createElement("canvas");
+          const tempCtx = tempCanvas.getContext("2d", { willReadFrequently: false });
+          if (!tempCtx) return;
+
+          tempCanvas.width = (blockWidth + padding * 2) * dpr;
+          tempCanvas.height = (blockHeight + padding * 2) * dpr;
+          tempCtx.scale(dpr, dpr);
+
+          // Copy region from base canvas
+          tempCtx.drawImage(
+            baseCanvasRef.current!,
+            (blockX - padding) * dpr,
+            (blockY - padding) * dpr,
+            (blockWidth + padding * 2) * dpr,
+            (blockHeight + padding * 2) * dpr,
+            0,
+            0,
+            blockWidth + padding * 2,
+            blockHeight + padding * 2
+          );
+
+          // Apply blur and draw
+          ctx.filter = `blur(${block.blurAmount}px)`;
+          ctx.drawImage(
+            tempCanvas,
+            blockX - padding,
+            blockY - padding,
+            blockWidth + padding * 2,
+            blockHeight + padding * 2
+          );
+          ctx.filter = "none";
+
+          ctx.restore();
+        });
+      }
+    };
+
+    // Use requestAnimationFrame for smooth updates without flickering
+    if (blurUpdateTimeoutRef.current) {
+      cancelAnimationFrame(blurUpdateTimeoutRef.current);
     }
 
-    // Load uploaded image
-    if (uploadedImageSrc) {
-      // Try to get cached image first
-      const cachedUpload = getCachedImage(uploadedImageSrc);
-      if (cachedUpload) {
-        uploadedImageRef.current = cachedUpload;
-        drawCanvas();
-      } else {
-        // Fallback to loading if not cached (for user uploads)
-        preloadImage(uploadedImageSrc)
-          .then((img) => {
-            uploadedImageRef.current = img;
-            drawCanvas();
-          })
-          .catch((err) => {
-            console.error("Failed to load uploaded image:", err);
-            uploadedImageRef.current = null;
-            drawCanvas();
-          });
+    blurUpdateTimeoutRef.current = requestAnimationFrame(compositeCanvas);
+
+    return () => {
+      if (blurUpdateTimeoutRef.current) {
+        cancelAnimationFrame(blurUpdateTimeoutRef.current);
       }
-    } else {
-      uploadedImageRef.current = null;
-      drawCanvas();
-    }
-  }, [
-    width,
-    height,
-    backgroundSrc,
-    backgroundGradient,
-    backgroundBlur,
-    uploadedImageSrc,
-    imageTransform,
-  ]);
+    };
+  }, [width, height, blurBlocks, baseCanvasKey, baseCanvasReady]);
 
   const isClickOnImage = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!uploadedImageSrc) return false;
