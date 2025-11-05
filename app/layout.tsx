@@ -16,6 +16,11 @@ export const metadata = {
   title: "Glowshot",
   description:
     "Glowshot is a platform to turn boring images into professional ones",
+  icons: {
+    icon: "/hero/example-image.jpg",
+    shortcut: "/hero/example-image.jpg",
+    apple: "/hero/example-image.jpg",
+  },
 };
 
 export default function RootLayout({
