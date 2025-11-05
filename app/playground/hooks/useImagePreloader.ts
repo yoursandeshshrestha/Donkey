@@ -12,7 +12,11 @@ export function preloadImage(src: string): Promise<HTMLImageElement> {
 
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    
+    // Only set crossOrigin for external URLs, not data URLs
+    if (!src.startsWith('data:')) {
+      img.crossOrigin = "anonymous";
+    }
     img.decoding = "async";
 
     img.onload = () => {
@@ -20,7 +24,11 @@ export function preloadImage(src: string): Promise<HTMLImageElement> {
       resolve(img);
     };
 
-    img.onerror = reject;
+    img.onerror = (error) => {
+      console.error("Image load error:", src.substring(0, 100), error);
+      reject(error);
+    };
+    
     img.src = src;
   });
 }
