@@ -6,3 +6,4 @@ export { InlineCrop } from "./InlineCrop";
 export { InlineScale } from "./InlineScale";
 export { DownloadMenu } from "./DownloadMenu";
 export { BackgroundDrawer } from "./BackgroundDrawer";
+export { BlurBlockOverlay } from "./BlurBlockOverlay";
