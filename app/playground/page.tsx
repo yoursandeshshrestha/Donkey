@@ -7,13 +7,14 @@ import {
   BackgroundDrawer,
 } from "../components/playground";
 import { PlaygroundHeader } from "../components/others/PlaygroundHeader";
+import { PlaygroundFooter } from "../components/others/PlaygroundFooter";
 import { useImageUpload } from "./hooks/useImageUpload";
 import { useBackgroundCycle } from "./hooks/useBackgroundCycle";
 import { useImageTransform } from "./hooks/useImageTransform";
 import { useImagePreloader } from "./hooks/useImagePreloader";
 import { useState, useEffect } from "react";
 import { exportCanvas, downloadImage } from "./utils/canvasExport";
-import { CANVAS_SIZES } from "./types";
+import { CANVAS_SIZES, BlurBlock } from "./types";
 
 // Preload all background images
 const BACKGROUND_IMAGES = [
@@ -50,6 +51,11 @@ export default function PlaygroundPage() {
   const [isBackgroundDrawerOpen, setIsBackgroundDrawerOpen] = useState(false);
   const [customWidth, setCustomWidth] = useState(1200);
   const [customHeight, setCustomHeight] = useState(1200);
+  const [blurBlocks, setBlurBlocks] = useState<BlurBlock[]>([]);
+  const [isManagingBlurBlocks, setIsManagingBlurBlocks] = useState(false);
+  const [selectedBlurBlockId, setSelectedBlurBlockId] = useState<string | null>(null);
+  const [copiedBlurBlock, setCopiedBlurBlock] = useState<BlurBlock | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(85);
 
   const {
     currentBackground,
@@ -100,8 +106,12 @@ export default function PlaygroundPage() {
   };
 
   const handleCropComplete = (croppedImage: string) => {
+    // Update image first
     updateImage(croppedImage);
-    setIsCropping(false);
+    // Use a small delay to ensure state updates before exiting crop mode
+    setTimeout(() => {
+      setIsCropping(false);
+    }, 0);
   };
 
   const handleCropCancel = () => {
@@ -124,9 +134,131 @@ export default function PlaygroundPage() {
     }
   };
 
+  const handleImageSelectionDone = () => {
+    setIsImageSelected(false);
+    setShowBorderRadiusSlider(false);
+  };
+
   const handleBackgroundClick = () => {
     setIsImageSelected(false);
+    setSelectedBlurBlockId(null);
+    setIsBackgroundDrawerOpen((prev) => !prev);
   };
+
+  const handleAddBlurBlock = () => {
+    const newBlock: BlurBlock = {
+      id: `blur-${Date.now()}`,
+      x: 25,
+      y: 25,
+      width: 25,
+      height: 25,
+      blurAmount: 10,
+    };
+    setBlurBlocks([...blurBlocks, newBlock]);
+    setIsManagingBlurBlocks(true);
+    setSelectedBlurBlockId(newBlock.id);
+    setIsImageSelected(false);
+    setIsCropping(false);
+    setIsScaling(false);
+  };
+
+  const handleUpdateBlurBlock = (id: string, updates: Partial<BlurBlock>) => {
+    setBlurBlocks((blocks) =>
+      blocks.map((block) => (block.id === id ? { ...block, ...updates } : block))
+    );
+  };
+
+  const handleDeleteBlurBlock = (id: string) => {
+    setBlurBlocks((blocks) => blocks.filter((block) => block.id !== id));
+    if (selectedBlurBlockId === id) {
+      setSelectedBlurBlockId(null);
+    }
+  };
+
+  const handleToggleBlurBlockMode = () => {
+    setIsManagingBlurBlocks((prev) => !prev);
+    if (isManagingBlurBlocks) {
+      setSelectedBlurBlockId(null);
+    }
+  };
+
+  const handleEnterBlurMode = () => {
+    if (!isManagingBlurBlocks) {
+      setIsManagingBlurBlocks(true);
+      setIsImageSelected(false);
+    }
+  };
+
+  const handleCopyBlurBlock = () => {
+    if (selectedBlurBlockId) {
+      const blockToCopy = blurBlocks.find((b) => b.id === selectedBlurBlockId);
+      if (blockToCopy) {
+        setCopiedBlurBlock(blockToCopy);
+      }
+    }
+  };
+
+  const handlePasteBlurBlock = () => {
+    if (copiedBlurBlock) {
+      const newBlock: BlurBlock = {
+        ...copiedBlurBlock,
+        id: `blur-${Date.now()}`,
+        // Offset by 5% to make it visible
+        x: Math.min(copiedBlurBlock.x + 5, 95 - copiedBlurBlock.width),
+        y: Math.min(copiedBlurBlock.y + 5, 95 - copiedBlurBlock.height),
+      };
+      setBlurBlocks([...blurBlocks, newBlock]);
+      setSelectedBlurBlockId(newBlock.id);
+      setIsManagingBlurBlocks(true);
+    }
+  };
+
+  // Keyboard shortcuts for copy/paste
+  useEffect(() => {
+    if (!isManagingBlurBlocks) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Copy: Cmd+C or Ctrl+C
+      if ((e.metaKey || e.ctrlKey) && e.key === "c" && selectedBlurBlockId) {
+        e.preventDefault();
+        handleCopyBlurBlock();
+      }
+      // Paste: Cmd+V or Ctrl+V
+      if ((e.metaKey || e.ctrlKey) && e.key === "v" && copiedBlurBlock) {
+        e.preventDefault();
+        handlePasteBlurBlock();
+      }
+      // Delete: Backspace or Delete
+      if ((e.key === "Backspace" || e.key === "Delete") && selectedBlurBlockId) {
+        e.preventDefault();
+        handleDeleteBlurBlock(selectedBlurBlockId);
+      }
+      // Exit blur mode: Enter
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleToggleBlurBlockMode();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isManagingBlurBlocks, selectedBlurBlockId, copiedBlurBlock, blurBlocks]);
+
+  // Keyboard shortcut to exit border radius mode
+  useEffect(() => {
+    if (!showBorderRadiusSlider) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Exit border radius mode: Enter
+      if (e.key === "Enter") {
+        e.preventDefault();
+        setShowBorderRadiusSlider(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showBorderRadiusSlider]);
 
 
   const handleCanvasSizeChange = (index: number) => {
@@ -154,6 +286,20 @@ export default function PlaygroundPage() {
     }
   };
 
+  const handleCanvasWidthChange = (width: number) => {
+    setCustomWidth(width);
+    if (isCustomCanvas) {
+      setWidth(width * 0.85);
+    }
+  };
+
+  const handleCanvasHeightChange = (height: number) => {
+    setCustomHeight(height);
+    if (isCustomCanvas) {
+      setHeight(height * 0.85);
+    }
+  };
+
   const handleDownload = async (scale: number, format: "png" | "jpeg" = "png") => {
     try {
       const dataUrl = await exportCanvas({
@@ -167,6 +313,7 @@ export default function PlaygroundPage() {
         backgroundBlur: backgroundBlur,
         uploadedImageSrc: uploadedImage || undefined,
         imageTransform: transform,
+        blurBlocks: blurBlocks,
       });
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -192,7 +339,31 @@ export default function PlaygroundPage() {
         customHeight={customHeight}
         onCustomDimensionsChange={handleCustomDimensionsChange}
       />
-      <div className="min-h-screen w-full bg-white relative">
+      <PlaygroundFooter
+        hasImage={!!uploadedImage}
+        isImageSelected={isImageSelected}
+        onCropClick={handleCropClick}
+        onScaleClick={handleScaleClick}
+        onBorderRadiusClick={handleBorderRadiusClick}
+        showBorderRadiusSlider={showBorderRadiusSlider}
+        borderRadius={transform.borderRadius}
+        onBorderRadiusChange={setBorderRadius}
+        isManagingBlurBlocks={isManagingBlurBlocks}
+        selectedBlurBlockId={selectedBlurBlockId}
+        onCopyBlurBlock={handleCopyBlurBlock}
+        onPasteBlurBlock={handlePasteBlurBlock}
+        onDeleteBlurBlock={() => selectedBlurBlockId && handleDeleteBlurBlock(selectedBlurBlockId)}
+        hasCopiedBlurBlock={copiedBlurBlock !== null}
+        zoomLevel={zoomLevel}
+        onZoomChange={setZoomLevel}
+        onBackgroundDrawerOpen={() => setIsBackgroundDrawerOpen((prev) => !prev)}
+        onImageUpload={handleImageUpload}
+        onToggleBlurBlockMode={handleToggleBlurBlockMode}
+        onAddBlurBlock={handleAddBlurBlock}
+        onImageSelectionDone={handleImageSelectionDone}
+        isBackgroundDrawerOpen={isBackgroundDrawerOpen}
+      />
+      <div className="h-screen w-full bg-white relative overflow-hidden">
         {/* Noise Texture (Darker Dots) Background */}
         <div
           className="absolute inset-0 z-0"
@@ -203,7 +374,7 @@ export default function PlaygroundPage() {
           }}
         />
 
-        <div className="relative flex items-center justify-center min-h-screen">
+        <div className="relative flex items-center justify-center h-full pt-20 pb-20">
           <div className="relative">
         <CanvasWithRulers
           width={baseWidth}
@@ -215,19 +386,33 @@ export default function PlaygroundPage() {
           imageTransform={transform}
           onImageClick={handleImageClick}
           onBackgroundClick={handleBackgroundClick}
-          onBackgroundDrawerOpen={() => setIsBackgroundDrawerOpen(true)}
+          onBackgroundDrawerOpen={() => setIsBackgroundDrawerOpen((prev) => !prev)}
           onImageUpload={handleImageUpload}
-          onCropClick={handleCropClick}
-          onScaleClick={handleScaleClick}
-          onBorderRadiusClick={handleBorderRadiusClick}
           isImageSelected={isImageSelected}
           isCropping={isCropping}
-          showBorderRadiusSlider={showBorderRadiusSlider}
-          borderRadius={transform.borderRadius}
-          onBorderRadiusChange={setBorderRadius}
           cropPresetIndex={cropPresetIndex}
           onCropPresetChange={setCropPresetIndex}
           isBackgroundDrawerOpen={isBackgroundDrawerOpen}
+          blurBlocks={blurBlocks}
+          isManagingBlurBlocks={isManagingBlurBlocks}
+          onAddBlurBlock={handleAddBlurBlock}
+          onUpdateBlurBlock={handleUpdateBlurBlock}
+          onDeleteBlurBlock={handleDeleteBlurBlock}
+          onToggleBlurBlockMode={handleToggleBlurBlockMode}
+          selectedBlurBlockId={selectedBlurBlockId}
+          onSelectBlurBlock={setSelectedBlurBlockId}
+          onCopyBlurBlock={handleCopyBlurBlock}
+          onPasteBlurBlock={handlePasteBlurBlock}
+          hasCopiedBlurBlock={copiedBlurBlock !== null}
+          zoomLevel={zoomLevel}
+          onZoomChange={setZoomLevel}
+          onEnterBlurMode={handleEnterBlurMode}
+          isCustomCanvas={isCustomCanvas}
+          onCanvasWidthChange={handleCanvasWidthChange}
+          onCanvasHeightChange={handleCanvasHeightChange}
+          showBorderRadiusSlider={showBorderRadiusSlider}
+          borderRadius={transform.borderRadius}
+          onBorderRadiusChange={setBorderRadius}
           overlay={
             <>
               {isCropping && originalImage && (
@@ -262,6 +447,8 @@ export default function PlaygroundPage() {
           onBackgroundSelect={setSpecificBackground}
           onBackgroundUpload={handleBackgroundUpload}
           onGenerateGradient={generateGradient}
+          backgroundBlur={backgroundBlur}
+          onBackgroundBlurChange={setBackgroundBlur}
         />
           </div>
         </div>
