@@ -2,9 +2,10 @@
 
 import { Canvas } from "./Canvas";
 import { GradientData } from "../../playground/utils/gradientGenerator";
-import { ReactNode, useState, useEffect, useRef } from "react";
-import { Image as ImageIcon, Shuffle, Scissors, Maximize2, RectangleHorizontal } from "lucide-react";
+import { ReactNode, useState, useEffect } from "react";
 import { motion } from "framer-motion";
+import { BlurBlock } from "../../playground/types";
+import { BlurBlockOverlay } from "./BlurBlockOverlay";
 import { CROP_PRESETS } from "./InlineCrop";
 
 interface CanvasWithRulersProps {
@@ -30,17 +31,31 @@ interface CanvasWithRulersProps {
   overlay?: ReactNode;
   onBackgroundDrawerOpen?: () => void;
   onImageUpload?: (file: File) => void;
-  onCropClick?: () => void;
-  onScaleClick?: () => void;
-  onBorderRadiusClick?: () => void;
   isImageSelected?: boolean;
   isCropping?: boolean;
-  showBorderRadiusSlider?: boolean;
-  borderRadius?: number;
-  onBorderRadiusChange?: (value: number) => void;
   cropPresetIndex?: number;
   onCropPresetChange?: (index: number) => void;
   isBackgroundDrawerOpen?: boolean;
+  blurBlocks?: BlurBlock[];
+  isManagingBlurBlocks?: boolean;
+  onAddBlurBlock?: () => void;
+  onUpdateBlurBlock?: (id: string, updates: Partial<BlurBlock>) => void;
+  onDeleteBlurBlock?: (id: string) => void;
+  onToggleBlurBlockMode?: () => void;
+  selectedBlurBlockId?: string | null;
+  onSelectBlurBlock?: (id: string | null) => void;
+  onCopyBlurBlock?: (id: string) => void;
+  onPasteBlurBlock?: () => void;
+  hasCopiedBlurBlock?: boolean;
+  zoomLevel?: number;
+  onZoomChange?: (zoom: number) => void;
+  onEnterBlurMode?: () => void;
+  isCustomCanvas?: boolean;
+  onCanvasWidthChange?: (width: number) => void;
+  onCanvasHeightChange?: (height: number) => void;
+  showBorderRadiusSlider?: boolean;
+  borderRadius?: number;
+  onBorderRadiusChange?: (radius: number) => void;
 }
 
 export function CanvasWithRulers({
@@ -56,48 +71,55 @@ export function CanvasWithRulers({
   overlay,
   onBackgroundDrawerOpen,
   onImageUpload,
-  onCropClick,
-  onScaleClick,
-  onBorderRadiusClick,
   isImageSelected = false,
   isCropping = false,
-  showBorderRadiusSlider = false,
-  borderRadius = 0,
-  onBorderRadiusChange,
   cropPresetIndex = 0,
   onCropPresetChange,
   isBackgroundDrawerOpen = false,
+  blurBlocks = [],
+  isManagingBlurBlocks = false,
+  onAddBlurBlock,
+  onUpdateBlurBlock,
+  onDeleteBlurBlock,
+  onToggleBlurBlockMode,
+  selectedBlurBlockId = null,
+  onSelectBlurBlock,
+  onCopyBlurBlock,
+  onPasteBlurBlock,
+  hasCopiedBlurBlock = false,
+  zoomLevel: externalZoomLevel,
+  onZoomChange,
+  onEnterBlurMode,
+  isCustomCanvas = false,
+  onCanvasWidthChange,
+  onCanvasHeightChange,
+  showBorderRadiusSlider = false,
+  borderRadius = 0,
+  onBorderRadiusChange,
 }: CanvasWithRulersProps) {
   // Use state for viewport-dependent calculations to avoid hydration errors
   const [maxDisplayWidth, setMaxDisplayWidth] = useState(1200);
   const [maxDisplayHeight, setMaxDisplayHeight] = useState(800);
-  const [zoomLevel, setZoomLevel] = useState(85);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [internalZoomLevel, setInternalZoomLevel] = useState(85);
+  const zoomLevel = externalZoomLevel ?? internalZoomLevel;
 
-  const handleImageUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && onImageUpload) {
-      onImageUpload(file);
-    }
-  };
-
-  // Handle keyboard events for border radius slider
-  useEffect(() => {
-    if (!showBorderRadiusSlider) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && onBorderRadiusClick) {
-        onBorderRadiusClick();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showBorderRadiusSlider, onBorderRadiusClick]);
+  // State for resize handles
+  type ResizeDirection =
+    | "top"
+    | "right"
+    | "bottom"
+    | "left"
+    | "top-left"
+    | "top-right"
+    | "bottom-left"
+    | "bottom-right"
+    | null;
+  const [resizeDirection, setResizeDirection] = useState<ResizeDirection>(null);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [initialDimensions, setInitialDimensions] = useState({
+    width: 0,
+    height: 0,
+  });
 
   useEffect(() => {
     // Update display dimensions after mount (client-side only)
@@ -115,6 +137,120 @@ export function CanvasWithRulers({
   const scaleY = Math.min(1, maxDisplayHeight / height);
   const baseDisplayScale = Math.min(scaleX, scaleY);
   const displayScale = baseDisplayScale * (zoomLevel / 85);
+
+  // Handle resize dragging with requestAnimationFrame for smooth performance
+  useEffect(() => {
+    if (!resizeDirection) return;
+
+    let animationFrameId: number;
+    let lastMouseX = dragStart.x;
+    let lastMouseY = dragStart.y;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+
+      // Cancel any pending animation frame
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+
+      // Use requestAnimationFrame for smooth updates
+      animationFrameId = requestAnimationFrame(() => {
+        const deltaX = (lastMouseX - dragStart.x) / displayScale;
+        const deltaY = (lastMouseY - dragStart.y) / displayScale;
+
+        // Edge handles only affect one dimension
+        if (resizeDirection === "right" || resizeDirection === "left") {
+          // Only change width for left/right edges
+          let newWidth =
+            resizeDirection === "right"
+              ? initialDimensions.width + deltaX
+              : initialDimensions.width - deltaX;
+
+          newWidth = Math.max(400, Math.min(3840, newWidth));
+          if (onCanvasWidthChange && newWidth !== width) {
+            onCanvasWidthChange(Math.round(newWidth));
+          }
+        } else if (resizeDirection === "top" || resizeDirection === "bottom") {
+          // Only change height for top/bottom edges
+          let newHeight =
+            resizeDirection === "bottom"
+              ? initialDimensions.height + deltaY
+              : initialDimensions.height - deltaY;
+
+          newHeight = Math.max(400, Math.min(2160, newHeight));
+          if (onCanvasHeightChange && newHeight !== height) {
+            onCanvasHeightChange(Math.round(newHeight));
+          }
+        } else {
+          // Corner handles affect both dimensions
+          let newWidth = initialDimensions.width;
+          let newHeight = initialDimensions.height;
+
+          if (resizeDirection?.includes("right")) {
+            newWidth = initialDimensions.width + deltaX;
+          } else if (resizeDirection?.includes("left")) {
+            newWidth = initialDimensions.width - deltaX;
+          }
+
+          if (resizeDirection?.includes("bottom")) {
+            newHeight = initialDimensions.height + deltaY;
+          } else if (resizeDirection?.includes("top")) {
+            newHeight = initialDimensions.height - deltaY;
+          }
+
+          // Constrain dimensions
+          newWidth = Math.max(400, Math.min(3840, newWidth));
+          newHeight = Math.max(400, Math.min(2160, newHeight));
+
+          // Update both dimensions for corners
+          if (onCanvasWidthChange && newWidth !== width) {
+            onCanvasWidthChange(Math.round(newWidth));
+          }
+          if (onCanvasHeightChange && newHeight !== height) {
+            onCanvasHeightChange(Math.round(newHeight));
+          }
+        }
+      });
+    };
+
+    const handleMouseUp = () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      setResizeDirection(null);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [
+    resizeDirection,
+    dragStart,
+    initialDimensions,
+    displayScale,
+    onCanvasWidthChange,
+    onCanvasHeightChange,
+    width,
+    height,
+  ]);
+
+  const handleResizeStart =
+    (direction: ResizeDirection) => (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setResizeDirection(direction);
+      setDragStart({ x: e.clientX, y: e.clientY });
+      setInitialDimensions({ width, height });
+    };
 
   const displayWidth = width * displayScale;
   const displayHeight = height * displayScale;
@@ -156,130 +292,258 @@ export function CanvasWithRulers({
               imageTransform={imageTransform}
               onImageClick={onImageClick}
               onBackgroundClick={onBackgroundClick}
+              blurBlocks={blurBlocks}
             />
             {/* Render overlay inside the same scaled container */}
             {overlay}
+            {/* Render blur block overlay - always show if there are blur blocks */}
+            {blurBlocks.length > 0 &&
+              onUpdateBlurBlock &&
+              onDeleteBlurBlock &&
+              onSelectBlurBlock && (
+                <BlurBlockOverlay
+                  blurBlocks={blurBlocks}
+                  onUpdateBlurBlock={onUpdateBlurBlock}
+                  onDeleteBlurBlock={onDeleteBlurBlock}
+                  canvasWidth={width}
+                  canvasHeight={height}
+                  selectedBlockId={
+                    isManagingBlurBlocks ? selectedBlurBlockId : null
+                  }
+                  onSelectBlock={onSelectBlurBlock}
+                  onCopyBlock={onCopyBlurBlock}
+                  onPasteBlock={onPasteBlurBlock}
+                  hasCopiedBlock={hasCopiedBlurBlock}
+                  onEnterBlurMode={onEnterBlurMode}
+                  isEditMode={isManagingBlurBlocks}
+                />
+              )}
           </div>
+
+          {/* Resize handles for custom canvas mode */}
+          {isCustomCanvas && onCanvasWidthChange && onCanvasHeightChange && (
+            <>
+              {/* Edge handles */}
+              {/* Top */}
+              <div
+                className="absolute -top-1 left-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500/30 transition-colors z-10"
+                onMouseDown={handleResizeStart("top")}
+              />
+
+              {/* Right */}
+              <div
+                className="absolute top-0 -right-1 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500/30 transition-colors z-10"
+                onMouseDown={handleResizeStart("right")}
+              />
+
+              {/* Bottom */}
+              <div
+                className="absolute top-0 left-0 -bottom-1 right-0 h-2 cursor-ns-resize hover:bg-blue-500/30 transition-colors z-10"
+                onMouseDown={handleResizeStart("bottom")}
+              />
+
+              {/* Left */}
+              <div
+                className="absolute -left-1 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500/30 transition-colors z-10"
+                onMouseDown={handleResizeStart("left")}
+              />
+
+              {/* Corner handles */}
+              {/* Top-Left */}
+              <div
+                className="absolute -top-1 -left-1 w-4 h-4 bg-blue-500 rounded-full cursor-nwse-resize hover:scale-125 transition-transform z-20 shadow-md"
+                onMouseDown={handleResizeStart("top-left")}
+              />
+
+              {/* Top-Right */}
+              <div
+                className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full cursor-nesw-resize hover:scale-125 transition-transform z-20 shadow-md"
+                onMouseDown={handleResizeStart("top-right")}
+              />
+
+              {/* Bottom-Right */}
+              <div
+                className="absolute -bottom-1 -right-1 w-4 h-4 bg-blue-500 rounded-full cursor-nwse-resize hover:scale-125 transition-transform z-20 shadow-md"
+                onMouseDown={handleResizeStart("bottom-right")}
+              />
+
+              {/* Bottom-Left */}
+              <div
+                className="absolute -bottom-1 -left-1 w-4 h-4 bg-blue-500 rounded-full cursor-nesw-resize hover:scale-125 transition-transform z-20 shadow-md"
+                onMouseDown={handleResizeStart("bottom-left")}
+              />
+            </>
+          )}
         </div>
       </motion.div>
 
-      {/* Fixed controls at the bottom */}
-      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center justify-between z-40 w-full max-w-4xl px-8">
-        {/* Zoom slider on the left */}
-        <div className="flex items-center gap-3">
-          <input
-            type="range"
-            min="50"
-            max="85"
-            value={zoomLevel}
-            onChange={(e) => setZoomLevel(Number(e.target.value))}
-            className="w-48 h-1 bg-gray-300 rounded-full appearance-none cursor-pointer slider-thumb"
-            style={{
-              background: `linear-gradient(to right, #d1d5db 0%, #d1d5db ${
-                ((zoomLevel - 50) / (85 - 50)) * 100
-              }%, #e5e7eb ${
-                ((zoomLevel - 50) / (85 - 50)) * 100
-              }%, #e5e7eb 100%)`,
-            }}
-          />
-          <span className="text-sm text-gray-700 font-medium min-w-[3ch]">
-            {zoomLevel}%
-          </span>
-        </div>
-
-        {/* Buttons on the right */}
-        <div className="flex items-center gap-4">
-          {isCropping && onCropPresetChange ? (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600">Crop Dimension:</span>
-              <div className="flex gap-2">
-                {CROP_PRESETS.map((preset, index) => (
-                  <button
-                    key={index}
-                    onClick={() => onCropPresetChange(index)}
-                    className={`px-4 py-1.5 rounded text-sm font-medium transition-all ${
-                      cropPresetIndex === index
-                        ? "bg-gray-900 text-white"
-                        : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    {preset.name}
-                  </button>
-                ))}
+      {/* Crop controls - show when cropping */}
+      {isCropping && onCropPresetChange && (
+        <div className="absolute inset-0 pointer-events-none z-50">
+          {/* Crop Dimension Presets - left side */}
+          <div className="absolute bottom-10 left-10 pointer-events-auto">
+            <div className="bg-white/90 backdrop-blur rounded-lg px-4 py-3 shadow-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-700 font-medium">
+                  Crop Dimension:
+                </span>
+                <div className="flex gap-2">
+                  {CROP_PRESETS.map((preset, index) => (
+                    <button
+                      key={index}
+                      onClick={() => onCropPresetChange(index)}
+                      className={`px-3 py-1.5 rounded text-xs font-medium transition-all ${
+                        cropPresetIndex === index
+                          ? "bg-gray-900 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {preset.name}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          ) : showBorderRadiusSlider && onBorderRadiusChange ? (
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600">Border Radius:</span>
-              <input
-                type="range"
-                value={borderRadius}
-                onChange={(e) => onBorderRadiusChange(Number(e.target.value))}
-                className="w-48 h-1 bg-gray-300 rounded-full appearance-none cursor-pointer slider-thumb"
-                min="0"
-                max="500"
-                step="1"
-              />
-              <input
-                type="number"
-                value={borderRadius}
-                onChange={(e) => onBorderRadiusChange(Number(e.target.value))}
-                className="w-16 px-2 py-1.5 bg-white border border-gray-300 rounded text-sm text-gray-900 text-center focus:outline-none focus:border-gray-400"
-                min="0"
-                max="500"
-              />
+          </div>
+
+          {/* Keyboard hints - right side */}
+          <div className="absolute bottom-10 right-10 pointer-events-auto">
+            <div className="bg-white/90 backdrop-blur rounded-lg px-4 py-3 shadow-lg flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                Press{" "}
+                <kbd className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                  Enter
+                </kbd>{" "}
+                to apply
+              </div>
+              <div className="w-px h-6 bg-gray-300"></div>
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                Press{" "}
+                <kbd className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                  Esc
+                </kbd>{" "}
+                to cancel
+              </div>
             </div>
-          ) : isImageSelected && uploadedImageSrc ? (
-            <>
-              <button
-                onClick={onCropClick}
-                className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                <Scissors className="w-4 h-4" />
-                Crop
-              </button>
-              <button
-                onClick={onScaleClick}
-                className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                <Maximize2 className="w-4 h-4" />
-                Scale
-              </button>
-              <button
-                onClick={onBorderRadiusClick}
-                className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                <RectangleHorizontal className="w-4 h-4" />
-                Border Radius
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={onBackgroundDrawerOpen}
-                className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                <Shuffle className="w-4 h-4" />
-                Change BG
-              </button>
-              <button
-                onClick={handleImageUploadClick}
-                className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                <ImageIcon className="w-4 h-4" />
-                Upload Image
-              </button>
-            </>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileChange}
-            className="hidden"
-          />
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Blur controls - show when managing blur blocks */}
+      {isManagingBlurBlocks && (
+        <div className="absolute inset-0 pointer-events-none z-50">
+          {/* Blur amount control - left side (same position as Crop Dimension) */}
+          <div className="absolute bottom-10 left-10 pointer-events-auto">
+            <div className="bg-white/90 backdrop-blur rounded-lg px-4 py-3 shadow-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-700 font-medium">
+                  {selectedBlurBlockId ? "Blur Amount:" : "Select a blur block"}
+                </span>
+                {selectedBlurBlockId && (
+                  <>
+                    <input
+                      type="range"
+                      value={
+                        blurBlocks.find((b) => b.id === selectedBlurBlockId)
+                          ?.blurAmount || 10
+                      }
+                      onChange={(e) => {
+                        if (onUpdateBlurBlock) {
+                          onUpdateBlurBlock(selectedBlurBlockId, {
+                            blurAmount: Number(e.target.value),
+                          });
+                        }
+                      }}
+                      className="w-32 h-1 bg-gray-200 rounded-full appearance-none cursor-pointer slider-thumb"
+                      min="1"
+                      max="50"
+                      step="1"
+                    />
+                    <input
+                      type="number"
+                      value={
+                        blurBlocks.find((b) => b.id === selectedBlurBlockId)
+                          ?.blurAmount || 10
+                      }
+                      onChange={(e) => {
+                        if (onUpdateBlurBlock) {
+                          onUpdateBlurBlock(selectedBlurBlockId, {
+                            blurAmount: Number(e.target.value),
+                          });
+                        }
+                      }}
+                      className="w-16 px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                      min="1"
+                      max="50"
+                    />
+                    <span className="text-xs text-gray-500">px</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Keyboard hints - right side (same position as crop mode hints) */}
+          <div className="absolute bottom-10 right-10 pointer-events-auto">
+            <div className="bg-white/90 backdrop-blur rounded-lg px-4 py-3 shadow-lg flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                Press{" "}
+                <kbd className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                  Enter
+                </kbd>{" "}
+                to save and exit
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Border Radius controls - show when border radius mode is active */}
+      {showBorderRadiusSlider && onBorderRadiusChange && (
+        <div className="absolute inset-0 pointer-events-none z-50">
+          {/* Border Radius control - left side (same position as Crop/Blur) */}
+          <div className="absolute bottom-10 left-10 pointer-events-auto">
+            <div className="bg-white/90 backdrop-blur rounded-lg px-4 py-3 shadow-lg">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-gray-700 font-medium">
+                  Border Radius:
+                </span>
+                <input
+                  type="range"
+                  value={borderRadius}
+                  onChange={(e) => onBorderRadiusChange(Number(e.target.value))}
+                  className="w-32 h-1 bg-gray-200 rounded-full appearance-none cursor-pointer slider-thumb"
+                  min="0"
+                  max="500"
+                  step="1"
+                />
+                <input
+                  type="number"
+                  value={borderRadius}
+                  onChange={(e) => onBorderRadiusChange(Number(e.target.value))}
+                  className="w-16 px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:border-gray-900"
+                  min="0"
+                  max="500"
+                />
+                <span className="text-xs text-gray-500">px</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Keyboard hints - right side */}
+          <div className="absolute bottom-10 right-10 pointer-events-auto">
+            <div className="bg-white/90 backdrop-blur rounded-lg px-4 py-3 shadow-lg flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                Press{" "}
+                <kbd className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                  Enter
+                </kbd>{" "}
+                to save and exit
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
