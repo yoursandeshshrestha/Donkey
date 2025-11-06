@@ -13,32 +13,32 @@ const faqData: FAQItem[] = [
   {
     question: "What is Glowshot and who is it for?",
     answer:
-      "Glowshot is a powerful image transformation platform designed for creators, designers, and anyone who needs to quickly add professional backgrounds to their images. It's perfect for social media content creators, product photographers, and marketing professionals.",
+      "Glowshot is a browser-based image transformation tool designed for creators, designers, and anyone who needs to quickly add professional backgrounds to their images. It's perfect for social media content creators, product photographers, marketers, and anyone looking to enhance their visual content without complex software.",
   },
   {
-    question: "What image formats are supported?",
+    question: "What image formats and canvas sizes are supported?",
     answer:
-      "Glowshot supports all common image formats including PNG, JPG, JPEG, and WebP. You can upload images of any size, and export them in either PNG or JPG format with adjustable quality settings.",
+      "Glowshot supports common image formats including PNG, JPG, JPEG, and WebP. You can choose from preset canvas sizes like HD Landscape (1920×1080), Square (1080×1080), Portrait (1080×1350), Twitter Post (1200×675), or create custom dimensions up to any size you need. Export in PNG or JPEG format with high-quality settings.",
   },
   {
-    question: "Can I use custom backgrounds for my images?",
+    question: "What background options are available?",
     answer:
-      "Yes! Glowshot offers both pre-made gradient backgrounds and the ability to upload your own custom background images. You can also create custom gradients with your preferred colors and directions.",
+      "Glowshot offers three ways to customize backgrounds: choose from 16 beautiful pre-made backgrounds, upload your own custom background images, or generate custom gradients with your preferred colors and directions. You can also apply blur effects to any background for a softer, more professional look.",
   },
   {
-    question: "Is there a limit on image size or number of exports?",
+    question: "Can I crop, scale, and add effects to my images?",
     answer:
-      "Currently, Glowshot is completely free to use with no limits on image size, number of uploads, or exports. You can transform as many images as you need without any restrictions.",
+      "Yes! Glowshot provides comprehensive image editing tools including inline cropping with preset aspect ratios, precise scaling controls, adjustable border radius for rounded corners, and selective blur blocks to blur specific areas of your canvas. All controls are intuitive and work in real-time.",
   },
   {
-    question: "Do I need to create an account to use Glowshot?",
+    question: "Is Glowshot free to use? Do I need an account?",
     answer:
-      "No account required! Glowshot works directly in your browser. Simply visit the playground, upload your image, customize it, and download your result. Your privacy is important to us - images are processed client-side and not stored on our servers.",
+      "Glowshot is completely free to use with no limits on image size, number of uploads, or exports. No account or sign-up required! Everything runs directly in your browser, ensuring your privacy - all images are processed client-side and never uploaded to our servers.",
   },
   {
-    question: "Can I adjust the size and position of my images?",
+    question: "How do I export my finished images?",
     answer:
-      "Absolutely! Glowshot provides precise controls for scaling, cropping, and positioning your images. You can adjust canvas dimensions, add padding, crop images inline, and position them exactly where you want on the canvas.",
+      "Once you're happy with your image, use the download menu in the header to export at different scales (1×, 2×, 3×, 4×) for various use cases. You can choose PNG for transparency or JPEG for smaller file sizes, customize the filename, and download instantly. Perfect for social media, presentations, or print.",
   },
 ];
 
