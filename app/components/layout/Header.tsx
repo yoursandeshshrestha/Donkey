@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { MessageSquare } from "lucide-react";
 import { GitHubBadge } from "../others/GitHubBadge";
 
 export function Header() {
@@ -18,6 +19,16 @@ export function Header() {
               className="text-[#37322f] hover:text-[#37322f]/80 text-sm font-medium"
             >
               Playground
+            </Link>
+
+            <Link
+              href="https://x.com/yoursandeshdev"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-[#37322f] hover:text-[#37322f]/80 text-sm font-medium"
+            >
+              <MessageSquare className="w-4 h-4" />
+              Feedback/Feature-Request
             </Link>
           </div>
         </nav>
